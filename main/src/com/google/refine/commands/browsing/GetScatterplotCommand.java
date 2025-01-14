@@ -44,11 +44,11 @@ import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.refine.browsing.Engine;
 import com.google.refine.browsing.FilteredRows;
 import com.google.refine.browsing.facets.ScatterplotDrawingRowVisitor;
@@ -69,6 +69,11 @@ public class GetScatterplotCommand extends Command {
     @Override
     public void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
+        // This command triggers evaluation expression and therefore requires CSRF-protection.
+        if (!hasValidCSRFTokenAsGET(request)) {
+            respondCSRFError(response);
+            return;
+        }
 
         try {
             long start = System.currentTimeMillis();
@@ -98,6 +103,7 @@ public class GetScatterplotCommand extends Command {
     }
 
     protected static class PlotterConfig {
+
         @JsonProperty(ScatterplotFacet.SIZE)
         public int size = 100;
         @JsonProperty(ScatterplotFacet.DOT)
@@ -217,8 +223,7 @@ public class GetScatterplotCommand extends Command {
         if (index_x != null && index_y != null && index_x.isNumeric() && index_y.isNumeric()) {
             ScatterplotDrawingRowVisitor drawer = new ScatterplotDrawingRowVisitor(
                     columnIndex_x, columnIndex_y, min_x, max_x, min_y, max_y,
-                    o.size, o.dim_x, o.dim_y, o.rotation, o.dot, color
-            );
+                    o.size, o.dim_x, o.dim_y, o.rotation, o.dot, color);
 
             if (base_color != null) {
                 drawer.setColor(base_color);

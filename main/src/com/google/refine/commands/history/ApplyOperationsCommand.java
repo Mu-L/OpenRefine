@@ -34,14 +34,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package com.google.refine.commands.history;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Properties;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.core.type.TypeReference;
+import org.apache.commons.lang.Validate;
+
 import com.google.refine.commands.Command;
 import com.google.refine.model.AbstractOperation;
 import com.google.refine.model.Project;
@@ -50,26 +52,33 @@ import com.google.refine.process.Process;
 import com.google.refine.util.ParsingUtilities;
 
 public class ApplyOperationsCommand extends Command {
-    
+
     @Override
     public void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-    	if(!hasValidCSRFToken(request)) {
-    		respondCSRFError(response);
-    		return;
-    	}
-        
-        Project project = getProject(request);
-        String jsonString = request.getParameter("operations");
+        if (!hasValidCSRFToken(request)) {
+            respondCSRFError(response);
+            return;
+        }
         try {
-            ArrayNode a = ParsingUtilities.evaluateJsonStringToArrayNode(jsonString);
-            int count = a.size();
-            for (int i = 0; i < count; i++) {
-            	if (a.get(i) instanceof ObjectNode) {
-	                ObjectNode obj = (ObjectNode) a.get(i);
-	                
-	                reconstructOperation(project, obj);
-            	}
+            Project project = getProject(request);
+            String jsonString = request.getParameter("operations");
+
+            List<AbstractOperation> operations = ParsingUtilities.mapper.readValue(jsonString,
+                    new TypeReference<List<AbstractOperation>>() {
+                    });
+
+            // Validate all operations first
+            for (AbstractOperation operation : operations) {
+                Validate.notNull(operation);
+                Validate.isTrue(!(operation instanceof UnknownOperation), "Unknown operation type: " + operation.getOperationId());
+                operation.validate();
+            }
+
+            // Run all operations in sequence
+            for (AbstractOperation operation : operations) {
+                Process process = operation.createProcess(project, new Properties());
+                project.processManager.queueProcess(process);
             }
 
             if (project.processManager.hasPending()) {
@@ -77,21 +86,8 @@ public class ApplyOperationsCommand extends Command {
             } else {
                 respond(response, "{ \"code\" : \"ok\" }");
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             respondException(response, e);
-        }
-    }
-    
-    protected void reconstructOperation(Project project, ObjectNode obj) throws IOException {
-        AbstractOperation operation = ParsingUtilities.mapper.convertValue(obj, AbstractOperation.class);
-        if (operation != null && !(operation instanceof UnknownOperation)) {
-            try {
-                Process process = operation.createProcess(project, new Properties());
-                
-                project.processManager.queueProcess(process);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
         }
     }
 }

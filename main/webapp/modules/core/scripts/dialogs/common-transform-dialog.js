@@ -69,30 +69,30 @@ commonTransformDialog.prototype._createDialog = function(expression,label) {
       
       this._elmts.columnContainer
       .find('.all-column-transform-dialog-container')
-      .click(function() {
+      .on('click',function() {
         container
         .find('.all-column-transform-dialog-container')
         .removeClass('selected');
         $(this).addClass('selected');
       });
       this._elmts.selectAllButton
-      .click(function() {
+      .on('click',function() {
         container
         .find('input[type="checkbox"]')
         .prop('checked',true);
        });
        this._elmts.deselectAllButton
-      .click(function() {
+      .on('click',function() {
         container
         .find('input[type="checkbox"]')
         .prop('checked',false);
       });
 
-    this._elmts.okButton.click(function() {
+    this._elmts.okButton.on('click',function() {
       self._commit(expression);
       self._dismiss();
     });
-    this._elmts.cancelButton.click(function() {
+    this._elmts.cancelButton.on('click',function() {
       self._dismiss();
     });
   
@@ -106,29 +106,32 @@ commonTransformDialog.prototype._dismiss = function() {
 
 
 commonTransformDialog.prototype._commit = function(expression) {
-      var doTextTransform = function(columnName, expression, onError, repeat, repeatCount) {
+  var self = this;
+  var columnNames = [];
+  this._elmts.columnContainer.find('div').each(function() {
+    if ($(this).find('input[type="checkbox"]')[0].checked) {
+      var name = this.getAttribute('column');
+      columnNames.push(name);
+    }
+  });
+  var doTextTransform = function(index, expression, onError, repeat, repeatCount) {
+    if (index < columnNames.length) {
       Refine.postCoreProcess(
         "text-transform",
         {
-          columnName: columnName, 
+          columnName: columnNames[index], 
           expression: expression, 
           onError: onError,
           repeat: repeat,
           repeatCount: repeatCount
         },
         null,
-        { cellsChanged: true }
+        { cellsChanged: true, rowIdsPreserved: true },
+        { onDone: function() { doTextTransform(index + 1, expression, onError, repeat, repeatCount) } }
       );
-  };
-
-	this._elmts.columnContainer.find('div').each(function() {
-    if ($(this).find('input[type="checkbox"]')[0].checked) {
-      var name = this.getAttribute('column');
-	    doTextTransform(name,expression, "keep-original", false, "");
+    } else {
+      self._dismiss();
     }
-  });
-  
-    
-    this._dismiss();
-    
+  };
+  doTextTransform(0, expression, "keep-original", false, "");
 };

@@ -37,21 +37,29 @@ import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.apache.commons.lang.Validate;
+
 import com.google.refine.history.HistoryEntry;
 import com.google.refine.model.AbstractOperation;
 import com.google.refine.model.Project;
 import com.google.refine.model.changes.ColumnReorderChange;
+import com.google.refine.operations.OperationDescription;
 
 public class ColumnReorderOperation extends AbstractOperation {
+
     final protected List<String> _columnNames;
-    
+
     @JsonCreator
     public ColumnReorderOperation(
-            @JsonProperty("columnNames")
-            List<String> columnNames) {
+            @JsonProperty("columnNames") List<String> columnNames) {
         _columnNames = columnNames;
     }
-    
+
+    @Override
+    public void validate() {
+        Validate.notNull(_columnNames, "Missing column names");
+    }
+
     @JsonProperty("columnNames")
     public List<String> getColumnNames() {
         return _columnNames;
@@ -59,17 +67,16 @@ public class ColumnReorderOperation extends AbstractOperation {
 
     @Override
     protected String getBriefDescription(Project project) {
-        return "Reorder columns";
+        return OperationDescription.column_reorder_brief();
     }
 
-   @Override
-protected HistoryEntry createHistoryEntry(Project project, long historyEntryID) throws Exception {
+    @Override
+    protected HistoryEntry createHistoryEntry(Project project, long historyEntryID) throws Exception {
         return new HistoryEntry(
-            historyEntryID,
-            project, 
-            "Reorder columns", 
-            this, 
-            new ColumnReorderChange(_columnNames)
-        );
+                historyEntryID,
+                project,
+                getBriefDescription(null),
+                this,
+                new ColumnReorderChange(_columnNames));
     }
 }
