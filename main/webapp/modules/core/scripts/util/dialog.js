@@ -37,7 +37,7 @@ DialogSystem = {
 
 var escapeKey = function(event) {
   var level = DialogSystem._layers.length;
-  if (event.keyCode == 27) {
+  if (event.key == "Escape") {
       DialogSystem.dismissUntil(level - 1);
   }
 }
@@ -54,10 +54,16 @@ DialogSystem.showDialog = function(elmt, onCancel) {
   .appendTo(document.body);
 
   elmt.css("visibility", "hidden").appendTo(container);
-  container.css("top", Math.round((overlay.height() - elmt.height()) / 2) + "px");
+// Dialogs should be in the upper half of the window
+// Offset by 10% of window height to separate from browser bar
+// Unless dialog is as big or bigger than the window, then set top to 0 + 5px;
+  var top1 = overlay.height()/10;
+  var top2 = Math.round((overlay.height() - elmt.height()) / 2);
+  var top = (top1 < top2) ? top1 : top2;
+  container.css("top", Math.round((top < 0 ) ? 5 : top) + "px");
   elmt.css("visibility", "visible");
 
-  container.draggable({ handle: '.dialog-header', cursor: 'move' });
+  container.draggable({ handle: '.dialog-header', containment: [ -32768, 0, 32768, 32768 ], cursor: 'move' });
 
   var layer = {
     overlay: overlay,
@@ -68,25 +74,45 @@ DialogSystem.showDialog = function(elmt, onCancel) {
 
   var level = DialogSystem._layers.length;
 
-  $(window).keydown(escapeKey);
-  
+  DialogSystem.setupEscapeKeyHandling();
+
+  elmt.attr("role", "dialog");
+  var dialogHeader = elmt.find(".dialog-header");
+  if (dialogHeader.length && dialogHeader[0].id) {
+    elmt.attr("aria-labeledby", dialogHeader[0].id);
+  }
+
+  elmt.attr("tabindex", -1);
+  elmt.trigger('focus');
+
   return level;
 };
+
+
+DialogSystem.pauseEscapeKeyHandling = function() {
+  $(window).off('keydown',escapeKey);
+}
+
+DialogSystem.setupEscapeKeyHandling = function() {
+  $(window).on('keydown',escapeKey);
+}
 
 DialogSystem.dismissLevel = function(level) {
     var layer = DialogSystem._layers[level];
 
-    $(document).unbind("keydown", layer.keyHandler);
+    if (layer) {
+      $(document).off("keydown", layer.keyHandler);
 
-    layer.overlay.remove();
-    layer.container.remove();
-    layer.container.unbind();
+      layer.overlay.remove();
+      layer.container.remove();
+      layer.container.off();
 
-    if (layer.onCancel) {
-      try {
-        layer.onCancel();
-      } catch (e) {
-        Refine.reportException(e);
+      if (layer.onCancel) {
+        try {
+          layer.onCancel();
+        } catch (e) {
+          Refine.reportException(e);
+        }
       }
     }
 };
@@ -121,4 +147,55 @@ DialogSystem.showBusy = function(message) {
     DialogSystem.dismissUntil(level - 1);
   };
 };
+
+DialogSystem.alert = function (error) {
+
+    let errorMessage = '';
+    if (typeof error === 'object') {
+        try {
+            errorMessage = JSON.stringify(error, null, 4); // Indent with 4 spaces for readability
+        } catch (e) {
+            errorMessage = $.i18n('core-dialogs/could-not-stringify');
+        }
+    } else {
+        errorMessage = error;
+    }
+    errorMessage = errorMessage.replace(/\r\n/g, "\n");
+
+    let frame = DialogSystem.createDialog();
+    frame.css("max-width", "50em")
+    let header = $('<div></div>')
+            .addClass("dialog-header")
+            .append($('<span>', {
+                'class': 'ui-icon ui-icon-alert',
+                'style': 'float:left; margin:0 7px 5px 0;'
+            }))
+            .append(document.createTextNode($.i18n('core-dialogs/error')))
+            .appendTo(frame);
+    let body = $('<div></div>').addClass("dialog-body").appendTo(frame);
+    let footer = $('<div></div>').addClass("dialog-footer").appendTo(frame);
+
+    let errorContent;
+    if (typeof errorMessage === 'string' && !errorMessage.includes('\n')) {
+        errorContent = $('<div>').text(errorMessage);
+    } else {
+        errorContent = $('<pre>').css({
+            'white-space': 'pre-wrap',
+            'word-break': 'break-all'
+        }).text(errorMessage);
+    }
+    body.append($('<p>')).append(errorContent);
+
+    let okButton = $('<button></button>').html($.i18n('core-buttons/ok')).on({
+        'click': () => {
+            DialogSystem.dismissUntil(this._level - 1);
+        }
+    }).css({
+        'float': 'right',
+        'margin': '5px'
+    });
+    footer.append(okButton);
+
+    this._level = DialogSystem.showDialog(frame);
+}
 

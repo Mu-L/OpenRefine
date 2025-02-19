@@ -65,18 +65,18 @@ public class TsvExporterTests extends RefineTest {
         logger = LoggerFactory.getLogger(this.getClass());
     }
 
-    //dependencies
+    // dependencies
     StringWriter writer;
     Project project;
     Engine engine;
     Properties options;
 
-    //System Under Test
+    // System Under Test
     CsvExporter SUT;
 
     @BeforeMethod
-    public void SetUp(){
-        SUT = new CsvExporter('\t');//new TsvExporter();
+    public void SetUp() {
+        SUT = new CsvExporter('\t');// new TsvExporter();
         writer = new StringWriter();
         project = new Project();
         engine = new Engine(project);
@@ -84,7 +84,7 @@ public class TsvExporterTests extends RefineTest {
     }
 
     @AfterMethod
-    public void TearDown(){
+    public void TearDown() {
         SUT = null;
         writer = null;
         project = null;
@@ -93,110 +93,87 @@ public class TsvExporterTests extends RefineTest {
     }
 
     @Test
-    public void exportSimpleTsv(){
+    public void exportSimpleTsv() throws IOException {
         CreateGrid(2, 2);
 
-        try {
-            SUT.export(project, options, engine, writer);
-        } catch (IOException e) {
-            Assert.fail();
-        }
+        SUT.export(project, options, engine, writer);
 
-        Assert.assertEquals(writer.toString(), "column0\tcolumn1\n" +
-                                               "row0cell0\trow0cell1\n" +
-                                               "row1cell0\trow1cell1\n");
+        assertEqualsSystemLineEnding(writer.toString(), "column0\tcolumn1\n" +
+                "row0cell0\trow0cell1\n" +
+                "row1cell0\trow1cell1\n");
 
     }
 
     @Test
-    public void exportSimpleTsvNoHeader(){
+    public void exportSimpleTsvNoHeader() throws IOException {
         CreateGrid(2, 2);
         when(options.getProperty("printColumnHeader")).thenReturn("false");
-        try {
-            SUT.export(project, options, engine, writer);
-        } catch (IOException e) {
-            Assert.fail();
-        }
 
-        Assert.assertEquals(writer.toString(), "row0cell0\trow0cell1\n" +
-                                               "row1cell0\trow1cell1\n");
+        SUT.export(project, options, engine, writer);
 
-        verify(options,times(2)).getProperty("printColumnHeader");
+        assertEqualsSystemLineEnding(writer.toString(), "row0cell0\trow0cell1\n" +
+                "row1cell0\trow1cell1\n");
+
+        verify(options, times(2)).getProperty("printColumnHeader");
     }
 
     @Test
-    public void exportTsvWithLineBreaks(){
-        CreateGrid(3,3);
+    public void exportTsvWithLineBreaks() throws IOException {
+        CreateGrid(3, 3);
 
         project.rows.get(1).cells.set(1, new Cell("line\n\n\nbreak", null));
-        try {
-            SUT.export(project, options, engine, writer);
-        } catch (IOException e) {
-            Assert.fail();
-        }
+        SUT.export(project, options, engine, writer);
 
-        Assert.assertEquals(writer.toString(), "column0\tcolumn1\tcolumn2\n" +
-                                               "row0cell0\trow0cell1\trow0cell2\n" +
-                                               "row1cell0\t\"line\n\n\nbreak\"\trow1cell2\n" +
-                                               "row2cell0\trow2cell1\trow2cell2\n");
+        assertEqualsSystemLineEnding(writer.toString(), "column0\tcolumn1\tcolumn2\n" +
+                "row0cell0\trow0cell1\trow0cell2\n" +
+                "row1cell0\tline\\n\\n\\nbreak\trow1cell2\n" +
+                "row2cell0\trow2cell1\trow2cell2\n");
     }
 
     @Test
-    public void exportTsvWithComma(){
-        CreateGrid(3,3);
+    public void exportTsvWithComma() throws IOException {
+        CreateGrid(3, 3);
 
         project.rows.get(1).cells.set(1, new Cell("with\t tab", null));
-        try {
-            SUT.export(project, options, engine, writer);
-        } catch (IOException e) {
-            Assert.fail();
-        }
+        SUT.export(project, options, engine, writer);
 
-        Assert.assertEquals(writer.toString(), "column0\tcolumn1\tcolumn2\n" +
-                                               "row0cell0\trow0cell1\trow0cell2\n" +
-                                               "row1cell0\t\"with\t tab\"\trow1cell2\n" +
-                                               "row2cell0\trow2cell1\trow2cell2\n");
+        assertEqualsSystemLineEnding(writer.toString(), "column0\tcolumn1\tcolumn2\n" +
+                "row0cell0\trow0cell1\trow0cell2\n" +
+                "row1cell0\twith\\t tab\trow1cell2\n" +
+                "row2cell0\trow2cell1\trow2cell2\n");
     }
 
     @Test
-    public void exportTsvWithQuote(){
-        CreateGrid(3,3);
+    public void exportTsvWithQuote() throws IOException {
+        CreateGrid(3, 3);
 
         project.rows.get(1).cells.set(1, new Cell("line has \"quote\"", null));
-        try {
-            SUT.export(project, options, engine, writer);
-        } catch (IOException e) {
-            Assert.fail();
-        }
+        SUT.export(project, options, engine, writer);
 
-        Assert.assertEquals(writer.toString(), "column0\tcolumn1\tcolumn2\n" +
-                                               "row0cell0\trow0cell1\trow0cell2\n" +
-                                               "row1cell0\t\"line has \"\"quote\"\"\"\trow1cell2\n" +
-                                               "row2cell0\trow2cell1\trow2cell2\n");
+        assertEqualsSystemLineEnding(writer.toString(), "column0\tcolumn1\tcolumn2\n" +
+                "row0cell0\trow0cell1\trow0cell2\n" +
+                "row1cell0\tline has \"quote\"\trow1cell2\n" +
+                "row2cell0\trow2cell1\trow2cell2\n");
     }
 
     @Test
-    public void exportTsvWithEmptyCells(){
-        CreateGrid(3,3);
+    public void exportTsvWithEmptyCells() throws IOException {
+        CreateGrid(3, 3);
 
         project.rows.get(1).cells.set(1, null);
         project.rows.get(2).cells.set(0, null);
-        try {
-            SUT.export(project, options, engine, writer);
-        } catch (IOException e) {
-            Assert.fail();
-        }
+        SUT.export(project, options, engine, writer);
 
-        Assert.assertEquals(writer.toString(), "column0\tcolumn1\tcolumn2\n" +
-                                               "row0cell0\trow0cell1\trow0cell2\n" +
-                                               "row1cell0\t\trow1cell2\n" +
-                                               "\trow2cell1\trow2cell2\n");
+        assertEqualsSystemLineEnding(writer.toString(), "column0\tcolumn1\tcolumn2\n" +
+                "row0cell0\trow0cell1\trow0cell2\n" +
+                "row1cell0\t\trow1cell2\n" +
+                "\trow2cell1\trow2cell2\n");
     }
 
-    //helper methods
+    // helper methods
 
-    protected void CreateColumns(int noOfColumns){
-        for(int i = 0; i < noOfColumns; i++){
+    protected void CreateColumns(int noOfColumns) {
+        for (int i = 0; i < noOfColumns; i++) {
             try {
                 project.columnModel.addColumn(i, new Column(i, "column" + i), true);
                 project.columnModel.columns.get(i).getCellIndex();
@@ -206,16 +183,15 @@ public class TsvExporterTests extends RefineTest {
         }
     }
 
-    protected void CreateGrid(int noOfRows, int noOfColumns){
+    protected void CreateGrid(int noOfRows, int noOfColumns) {
         CreateColumns(noOfColumns);
 
-        for(int i = 0; i < noOfRows; i++){
+        for (int i = 0; i < noOfRows; i++) {
             Row row = new Row(noOfColumns);
-            for(int j = 0; j < noOfColumns; j++){
+            for (int j = 0; j < noOfColumns; j++) {
                 row.cells.add(new Cell("row" + i + "cell" + j, null));
             }
             project.rows.add(row);
         }
     }
 }
-

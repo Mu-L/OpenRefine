@@ -35,41 +35,49 @@ package com.google.refine.commands.history;
 
 import java.io.IOException;
 import java.util.Properties;
+import java.util.Set;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.refine.commands.Command;
 import com.google.refine.model.AbstractOperation;
 import com.google.refine.model.Project;
-import com.google.refine.operations.UnknownOperation;
+import com.google.refine.operations.Recipe;
+import com.google.refine.operations.Recipe.RecipeValidationException;
 import com.google.refine.process.Process;
 import com.google.refine.util.ParsingUtilities;
 
 public class ApplyOperationsCommand extends Command {
-    
+
     @Override
     public void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-    	if(!hasValidCSRFToken(request)) {
-    		respondCSRFError(response);
-    		return;
-    	}
-        
-        Project project = getProject(request);
-        String jsonString = request.getParameter("operations");
+        if (!hasValidCSRFToken(request)) {
+            respondCSRFError(response);
+            return;
+        }
         try {
-            ArrayNode a = ParsingUtilities.evaluateJsonStringToArrayNode(jsonString);
-            int count = a.size();
-            for (int i = 0; i < count; i++) {
-            	if (a.get(i) instanceof ObjectNode) {
-	                ObjectNode obj = (ObjectNode) a.get(i);
-	                
-	                reconstructOperation(project, obj);
-            	}
+            Project project = getProject(request);
+            String jsonString = request.getParameter("operations");
+
+            Recipe recipe = ParsingUtilities.mapper.readValue(jsonString, Recipe.class);
+            recipe.validate();
+
+            // check all required columns are present
+            Set<String> requiredColumns = recipe.computeRequiredColumns();
+            for (String columnName : requiredColumns) {
+                if (project.columnModel.getColumnByName(columnName) == null) {
+                    throw new IllegalArgumentException(
+                            "Column '" + columnName + "' is referenced in the list of operations but is absent from the project");
+                }
+            }
+
+            // Run all operations in sequence
+            for (AbstractOperation operation : recipe.getOperations()) {
+                Process process = operation.createProcess(project, new Properties());
+                project.processManager.queueProcess(process);
             }
 
             if (project.processManager.hasPending()) {
@@ -77,21 +85,10 @@ public class ApplyOperationsCommand extends Command {
             } else {
                 respond(response, "{ \"code\" : \"ok\" }");
             }
-        } catch (IOException e) {
+        } catch (RecipeValidationException e) {
+            respondJSON(response, e);
+        } catch (Exception e) {
             respondException(response, e);
-        }
-    }
-    
-    protected void reconstructOperation(Project project, ObjectNode obj) throws IOException {
-        AbstractOperation operation = ParsingUtilities.mapper.convertValue(obj, AbstractOperation.class);
-        if (operation != null && !(operation instanceof UnknownOperation)) {
-            try {
-                Process process = operation.createProcess(project, new Properties());
-                
-                project.processManager.queueProcess(process);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
         }
     }
 }

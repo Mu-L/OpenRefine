@@ -39,17 +39,19 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
-
-import org.apache.hc.core5.http.Header;
-import org.apache.hc.core5.http.message.BasicHeader;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import org.apache.commons.lang.Validate;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.core5.http.message.BasicHeader;
 
 import com.google.refine.browsing.Engine;
 import com.google.refine.browsing.EngineConfig;
@@ -59,73 +61,64 @@ import com.google.refine.expr.EvalError;
 import com.google.refine.expr.Evaluable;
 import com.google.refine.expr.ExpressionUtils;
 import com.google.refine.expr.MetaParser;
+import com.google.refine.expr.ParsingException;
 import com.google.refine.expr.WrappedCell;
 import com.google.refine.history.HistoryEntry;
 import com.google.refine.model.Cell;
 import com.google.refine.model.Column;
+import com.google.refine.model.ColumnsDiff;
 import com.google.refine.model.Project;
 import com.google.refine.model.Row;
 import com.google.refine.model.changes.CellAtRow;
 import com.google.refine.model.changes.ColumnAdditionChange;
 import com.google.refine.operations.EngineDependentOperation;
 import com.google.refine.operations.OnError;
+import com.google.refine.operations.OperationDescription;
 import com.google.refine.process.LongRunningProcess;
 import com.google.refine.process.Process;
 import com.google.refine.util.HttpClient;
 
-
 public class ColumnAdditionByFetchingURLsOperation extends EngineDependentOperation {
-    public static final class HttpHeader  {
+
+    public static final class HttpHeader {
+
         @JsonProperty("name")
         final public String name;
         @JsonProperty("value")
         final public String value;
-        
+
         @JsonCreator
         public HttpHeader(
-                @JsonProperty("name")
-                String name,
-                @JsonProperty("value")
-                String value) {
+                @JsonProperty("name") String name,
+                @JsonProperty("value") String value) {
             this.name = name;
             this.value = value;
         }
     }
-    
-    final protected String     _baseColumnName;
-    final protected String     _urlExpression;
-    final protected OnError    _onError;
 
-    final protected String     _newColumnName;
-    final protected int        _columnInsertIndex;
-    final protected int        _delay;
-    final protected boolean    _cacheResponses;
-    final protected List<HttpHeader>  _httpHeadersJson;
+    final protected String _baseColumnName;
+    final protected String _urlExpression;
+    final protected OnError _onError;
+
+    final protected String _newColumnName;
+    final protected int _columnInsertIndex;
+    final protected int _delay;
+    final protected boolean _cacheResponses;
+    final protected List<HttpHeader> _httpHeadersJson;
     private Header[] httpHeaders = new Header[0];
     private HttpClient _httpClient;
 
-
     @JsonCreator
     public ColumnAdditionByFetchingURLsOperation(
-        @JsonProperty("engineConfig")
-        EngineConfig   engineConfig,
-        @JsonProperty("baseColumnName")
-        String         baseColumnName,
-        @JsonProperty("urlExpression")
-        String         urlExpression,
-        @JsonProperty("onError")
-        OnError        onError,
-        @JsonProperty("newColumnName")
-        String         newColumnName,
-        @JsonProperty("columnInsertIndex")
-        int            columnInsertIndex,
-        @JsonProperty("delay")
-        int            delay,
-        @JsonProperty("cacheResponses")
-        boolean        cacheResponses,
-        @JsonProperty("httpHeadersJson")
-        List<HttpHeader>      httpHeadersJson
-    ) {
+            @JsonProperty("engineConfig") EngineConfig engineConfig,
+            @JsonProperty("baseColumnName") String baseColumnName,
+            @JsonProperty("urlExpression") String urlExpression,
+            @JsonProperty("onError") OnError onError,
+            @JsonProperty("newColumnName") String newColumnName,
+            @JsonProperty("columnInsertIndex") int columnInsertIndex,
+            @JsonProperty("delay") int delay,
+            @JsonProperty("cacheResponses") boolean cacheResponses,
+            @JsonProperty("httpHeadersJson") List<HttpHeader> httpHeadersJson) {
         super(engineConfig);
 
         _baseColumnName = baseColumnName;
@@ -143,6 +136,7 @@ public class ColumnAdditionByFetchingURLsOperation extends EngineDependentOperat
         if (_httpHeadersJson != null) {
             for (HttpHeader header : _httpHeadersJson) {
                 if (!isNullOrEmpty(header.name) && !isNullOrEmpty(header.value)) {
+                    // TODO: Should we be checking headers against a whitelist here?
                     headers.add(new BasicHeader(header.name, header.value));
                 }
             }
@@ -150,6 +144,21 @@ public class ColumnAdditionByFetchingURLsOperation extends EngineDependentOperat
         httpHeaders = headers.toArray(httpHeaders);
         _httpClient = new HttpClient(_delay);
 
+    }
+
+    @Override
+    public void validate() {
+        super.validate();
+        Validate.notNull(_baseColumnName, "Missing base column name");
+        Validate.notNull(_urlExpression, "Missing URL expression");
+        try {
+            MetaParser.parse(_urlExpression);
+        } catch (ParsingException e) {
+            throw new IllegalArgumentException(String.format("Invalid expression '%s': %s", _urlExpression, e.getMessage()), e);
+        }
+        Validate.notNull(_onError, "Missing 'on error' behaviour");
+        Validate.notNull(_newColumnName, "Missing new column name");
+        Validate.isTrue(_columnInsertIndex >= 0, "Invalid column insert index");
     }
 
     @JsonProperty("newColumnName")
@@ -161,32 +170,32 @@ public class ColumnAdditionByFetchingURLsOperation extends EngineDependentOperat
     public int getColumnInsertIndex() {
         return _columnInsertIndex;
     }
-    
+
     @JsonProperty("baseColumnName")
     public String getBaseColumnName() {
         return _baseColumnName;
     }
-    
+
     @JsonProperty("urlExpression")
     public String getUrlExpression() {
         return _urlExpression;
     }
-    
+
     @JsonProperty("onError")
     public OnError getOnError() {
         return _onError;
     }
-    
+
     @JsonProperty("delay")
     public int getDelay() {
         return _delay;
     }
-    
+
     @JsonProperty("httpHeadersJson")
     public List<HttpHeader> getHttpHeadersJson() {
         return _httpHeadersJson;
     }
-    
+
     @JsonProperty("cacheResponses")
     public boolean getCacheResponses() {
         return _cacheResponses;
@@ -194,19 +203,29 @@ public class ColumnAdditionByFetchingURLsOperation extends EngineDependentOperat
 
     @Override
     protected String getBriefDescription(Project project) {
-        return "Create column " + _newColumnName +
-            " at index " + _columnInsertIndex +
-            " by fetching URLs based on column " + _baseColumnName +
-            " using expression " + _urlExpression;
+        return OperationDescription.column_addition_by_fetching_urls_brief(_newColumnName, _columnInsertIndex, _baseColumnName,
+                _urlExpression);
     }
 
     protected String createDescription(Column column, List<CellAtRow> cellsAtRows) {
-        return "Create new column " + _newColumnName +
-            ", filling " + cellsAtRows.size() +
-            " rows by fetching URLs based on column " + column.getName() +
-            " and formulated as " + _urlExpression;
+        return OperationDescription.column_addition_by_fetching_urls_desc(_newColumnName, cellsAtRows.size(), column.getName(),
+                _urlExpression);
     }
 
+    @Override
+    public Optional<Set<String>> getColumnDependenciesWithoutEngine() {
+        try {
+            Evaluable evaluable = MetaParser.parse(_urlExpression);
+            return evaluable.getColumnDependencies(Optional.of(_baseColumnName));
+        } catch (ParsingException e) {
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    public Optional<ColumnsDiff> getColumnsDiff() {
+        return Optional.of(ColumnsDiff.builder().addColumn(_newColumnName, _baseColumnName).build());
+    }
 
     @Override
     public Process createProcess(Project project, Properties options) throws Exception {
@@ -216,29 +235,28 @@ public class ColumnAdditionByFetchingURLsOperation extends EngineDependentOperat
         Evaluable eval = MetaParser.parse(_urlExpression);
 
         return new ColumnAdditionByFetchingURLsProcess(
-            project,
-            engine,
-            eval,
-            getBriefDescription(null),
-            _cacheResponses
-        );
+                project,
+                engine,
+                eval,
+                getBriefDescription(null),
+                _cacheResponses);
     }
 
     public class ColumnAdditionByFetchingURLsProcess extends LongRunningProcess implements Runnable {
-        final protected Project       _project;
-        final protected Engine        _engine;
-        final protected Evaluable     _eval;
-        final protected long          _historyEntryID;
-        protected int                 _cellIndex;
+
+        final protected Project _project;
+        final protected Engine _engine;
+        final protected Evaluable _eval;
+        final protected long _historyEntryID;
+        protected int _cellIndex;
         protected LoadingCache<String, Serializable> _urlCache;
 
         public ColumnAdditionByFetchingURLsProcess(
-            Project project,
-            Engine engine,
-            Evaluable eval,
-            String description,
-            boolean cacheResponses
-        ) {
+                Project project,
+                Engine engine,
+                Evaluable eval,
+                String description,
+                boolean cacheResponses) {
             super(description);
             _project = project;
             _engine = engine;
@@ -247,22 +265,23 @@ public class ColumnAdditionByFetchingURLsOperation extends EngineDependentOperat
             _urlCache = null;
             if (cacheResponses) {
                 _urlCache = CacheBuilder.newBuilder()
-                .maximumSize(2048)
-                .expireAfterWrite(10, TimeUnit.MINUTES)
-                .build(
-                     new CacheLoader<String, Serializable>() {
-                        public Serializable load(String urlString) throws Exception {
-                            Serializable result = fetch(urlString, httpHeaders);
-                            if (result == null) {
-                                // the load method should not return any null value
-                                throw new Exception("null result returned by fetch");
-                            }
-                            return result;
-                        }
-                        });
+                        .maximumSize(2048)
+                        .expireAfterWrite(10, TimeUnit.MINUTES)
+                        .build(
+                                new CacheLoader<String, Serializable>() {
+
+                                    public Serializable load(String urlString) throws Exception {
+                                        Serializable result = fetch(urlString, httpHeaders);
+                                        if (result == null) {
+                                            // the load method should not return any null value
+                                            throw new Exception("null result returned by fetch");
+                                        }
+                                        return result;
+                                    }
+                                });
             }
         }
-        
+
         @Override
         protected Runnable getRunnable() {
             return this;
@@ -315,15 +334,14 @@ public class ColumnAdditionByFetchingURLsOperation extends EngineDependentOperat
 
             if (!_canceled) {
                 HistoryEntry historyEntry = new HistoryEntry(
-                    _historyEntryID,
-                    _project,
-                    _description,
-                    ColumnAdditionByFetchingURLsOperation.this,
-                    new ColumnAdditionChange(
-                        _newColumnName,
-                        _columnInsertIndex,
-                        responseBodies)
-                );
+                        _historyEntryID,
+                        _project,
+                        _description,
+                        ColumnAdditionByFetchingURLsOperation.this,
+                        new ColumnAdditionChange(
+                                _newColumnName,
+                                _columnInsertIndex,
+                                responseBodies));
 
                 _project.history.addEntry(historyEntry);
                 _project.processManager.onDoneProcess(this);
@@ -332,14 +350,14 @@ public class ColumnAdditionByFetchingURLsOperation extends EngineDependentOperat
 
         Serializable cachedFetch(String urlString) {
             try {
-                return  _urlCache.get(urlString);
-            } catch(Exception e) {
+                return _urlCache.get(urlString);
+            } catch (Exception e) {
                 return null;
             }
         }
 
         Serializable fetch(String urlString, Header[] headers) {
-            try { //HttpClients.createDefault()) {
+            try { // HttpClients.createDefault()) {
                 try {
                     return _httpClient.getAsString(urlString, headers);
                 } catch (IOException e) {
@@ -350,12 +368,12 @@ public class ColumnAdditionByFetchingURLsOperation extends EngineDependentOperat
             }
         }
 
-
         RowVisitor createRowVisitor(List<CellAtRow> cellsAtRows) {
             return new RowVisitor() {
-                int              cellIndex;
-                Properties       bindings;
-                List<CellAtRow>  cellsAtRows;
+
+                int cellIndex;
+                Properties bindings;
+                List<CellAtRow> cellsAtRows;
 
                 public RowVisitor init(List<CellAtRow> cellsAtRows) {
                     Column column = _project.columnModel.getColumnByName(_baseColumnName);
